@@ -1,0 +1,9 @@
+pandas
+scipy
+numpy
+plotly
+statsmodels
+xhtml2pdf
+python-calamine
+openpyxl
+dash
