@@ -49,6 +49,11 @@ tpca.plot(options)
 ```
 
 Output:
+
+Once the processing has finished, open your browser and navigate to: http://127.0.0.1:8050
+
+This will load the interactive TPCA app.
+
 - The sunburst plot on the left represents the total abundance of protein (sum of abundance values) in the 
 hierarchical functional bins (as the size of the "pie slice") and the Pearson correlation coefficient between 
 transcript and protein log2FC values. Clicking on a functional bin in the sunburst plot will update the scatter plot.
