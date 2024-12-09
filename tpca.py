@@ -6,6 +6,7 @@ from statsmodels.regression.linear_model import OLS
 from xhtml2pdf import pisa
 import pandas as pd
 from dash import Dash, dcc, html, Input, Output, callback, dash_table, ctx
+from dash.dash_table.Format import Format, Scheme, Trim
 
 
 class TPCA:
@@ -17,9 +18,10 @@ class TPCA:
     """
 
     def __init__(self):
+        
         self.app = Dash()
-        self.transcript_data_file = ""
-        self.protein_data_file = ""
+        self.transcript_data_file = 'data/Peng_Setaria_Protein_Data_20240521.xlsx'
+        self.protein_data_file = 'data/Peng_Setaria_Transcript_Data_20240521.xlsx'
         self.protein_data = pd.DataFrame()
         self.transcript_data = pd.DataFrame()
         self.protein_transcript_data = pd.DataFrame()
@@ -37,6 +39,65 @@ class TPCA:
             "r-squared": [],
             "nobs": [],
         }
+        self.config = config = {
+
+            # provide the path to the proteomic data table (*.xlsx)
+            'protein_data_file': 'data/Peng_Setaria_Protein_Data_20240521.xlsx',
+
+            # provide the path to the transcriptomic data table (*.xlsx)
+            'transcript_data_file': 'data/Peng_Setaria_Transcript_Data_20240521.xlsx',
+
+            # name of the unique geneID column in the proteomic data (for joining to the transcript data via exact match)
+            # in proteomic data, this will be the specific or (in multi-protein protein groups),
+            # the geneID of the most well-evidenced (razor) protein
+            'protein_data_index_col': 'GeneID',
+
+            # name of the unique geneID column in the transcript data (for joining to the protein data via exact match)
+            'transcript_data_index_col': 'GeneID',
+
+            # name of the column in the protein data containing the list of gene IDs represented in the protein group
+            'protein_data_gene_ids_col': 'GeneIDs',
+
+            # name of the column in the protein data containing the protein abundance values to be used in visualisations
+            'protein_data_abundance_col': 'Intensity',
+
+            # name of the column in the protein data containing the log-transformed protein response data
+            # (e.g. log2(FoldChange) values
+            'protein_data_logFC_response_data_col': 'log2FC_protein',
+
+            # name of the column in the transcript data containing the log-transformed transcript response data
+            # (e.g. log2(FoldChange) values
+            'transcript_data_logFC_response_data_col': 'log2FC_transcript',
+
+            # name of the column in the transcript data containing the log-transformed transcript response data
+            # (e.g. log2(FoldChange) values
+            'transcript_data_FC_data_col': 'foldChange',
+
+            # name of the column in the protein data table that contains the protein group expression ratio column
+            'protein_data_FC_data_col': 'Ratio H/L',
+
+            # name of the column in the protein data containing the full annotation / description of the columns
+            'protein_data_description_col': 'Fasta headers',
+
+            # name of the column (in either transcript or protein data table) that contains the hierarchical functional bin labels
+            'fbin_col': 'Functional Bin',
+
+            # name of the column (in either transcript or protein data table) that contains the hierarchical functional bin labels
+            'gene_id_col': 'newlocusName',
+
+            # name of the column in the protein data table that contains the peptide count column
+            'protein_data_peptide_count_col': 'Peptides',
+
+            # name of the column in the protein data table that contains the protein group Score column
+            'protein_data_score_col': 'Score',
+
+            # name of the column in the protein data table that contains the protein group Score column
+            'transcript_data_basemean_col': 'baseMean',
+
+            # specify the figure height in pixels
+            'figure_height': 800
+
+        }
 
     def get_parent_fbin(self, fbin):
 
@@ -53,13 +114,19 @@ class TPCA:
 
         return parent_fbin
 
+    def configure(self, config):
+
+        for key in config.keys():
+            if key in self.config.keys():
+                self.config[key] = config[key]
+
     def get_level_fbins_from_protein_transcript_data(self):
         """
             from the protein_transcript dataframe, pull out the non-redundant
             list of functional bins in the column with header "NAME"
             """
         fbins = ["all"]
-        fbins.extend(self.protein_transcript_data['NAME'].unique())
+        fbins.extend(self.protein_transcript_data[self.config["fbin_col"]].unique())
 
         """
         prepare a dictionary that will store lists of functionally categories 
@@ -102,13 +169,13 @@ class TPCA:
     def get_fbin_gene_tree_data_from_protein_transcript_data(self):
 
         for index, row in self.protein_transcript_data.iterrows():
-            parent_fbin = row["NAME"]
+            parent_fbin = row[self.config["fbin_col"]]
             if parent_fbin != "":
                 level = len(parent_fbin.split("."))+2
-                self.fbin_gene_tree_data["index"].append(row["Fasta headers"])
-                self.fbin_gene_tree_data["name"].append(row["Fasta headers"])
+                self.fbin_gene_tree_data["index"].append(row[self.config["protein_data_description_col"]])
+                self.fbin_gene_tree_data["name"].append(row[self.config["protein_data_description_col"]])
                 self.fbin_gene_tree_data["parent"].append(parent_fbin)
-                self.fbin_gene_tree_data["value"].append(row["Intensity"])
+                self.fbin_gene_tree_data["value"].append(row[self.config["protein_data_abundance_col"]])
                 self.fbin_gene_tree_data["level"].append(level)
                 self.fbin_gene_tree_data["r"].append(0)
                 self.fbin_gene_tree_data["r-squared"].append(0)
@@ -116,11 +183,14 @@ class TPCA:
 
     def prepare(self):
 
+        self.get_protein_data()
+        self.get_transcript_data()
+
         # Map (join) the transcript data rows onto the ends of their respective protein rows on the basis of index_col match
         self.protein_transcript_data = self.protein_data.join(self.transcript_data, how='inner')
 
         # Output the joined protein-transcript data frame to an Excel file
-        self.protein_transcript_data.to_excel("data/Peng_Setaria_Protein-Transcript_Data.xlsx")
+        self.protein_transcript_data.to_excel("data/Protein-Transcript_Data.xlsx")
 
         # Map the joined protein-transcript dataset rows out into a dict of arrays under unique level_fbin keys
         self.get_level_fbins_from_protein_transcript_data()
@@ -160,7 +230,7 @@ class TPCA:
 
     def analyse_subset_association(self, subset):
 
-        r = stats.pearsonr(subset["log2FC_transcript"], subset["log2FC_protein"])[0]
+        r = stats.pearsonr(subset[self.config["transcript_data_logFC_response_data_col"]], subset[self.config["protein_data_logFC_response_data_col"]])[0]
         rsquared = r ** 2
         r_formatted = "{:.2f}".format(r)
         rsquared_formatted = "{:.2f}".format(rsquared)
@@ -173,7 +243,7 @@ class TPCA:
             subset = self.protein_transcript_data
         else:
             print(fbin)
-            subset = self.protein_transcript_data[self.protein_transcript_data["NAME"].str.contains(fbin)]
+            subset = self.protein_transcript_data[self.protein_transcript_data[self.config["fbin_col"]].str.contains(fbin)]
         return subset
 
     def plot_scatter(self, functional_bin, write_html):
@@ -215,16 +285,24 @@ class TPCA:
                          ", r2 = " + str(round(results['r-squared'], 3)) +
                          ")")
 
-                scatter_fig = px.scatter(subset, x="log2FC_transcript", y="log2FC_protein", color='Intensity', size='Intensity',
-                                 trendline='ols', color_continuous_scale=px.colors.sequential.Bluered, title=title,
-                                 hover_name="Fasta headers", custom_data=['newlocusName'], template='plotly_white')
+                scatter_fig = px.scatter(subset,
+                                         x=self.config["transcript_data_logFC_response_data_col"],
+                                         y=self.config["protein_data_logFC_response_data_col"],
+                                         color=self.config["protein_data_abundance_col"],
+                                         size=self.config["protein_data_abundance_col"],
+                                         trendline='ols',
+                                         color_continuous_scale=px.colors.sequential.Bluered,
+                                         title=title,
+                                         hover_name=self.config["protein_data_description_col"],
+                                         custom_data=[self.config["gene_id_col"]],
+                                         template='plotly_white')
 
                 scatter_fig.update_layout(
                     plot_bgcolor='white',
                     hovermode="x unified",
                     hoverlabel=dict(bgcolor='rgba(180, 180, 180, 0.5)', font_size=10, font_color='rgba(0, 0, 0, 1)'),
                     clickmode='event+select',
-                    height=500
+                    height=self.config["figure_height"]
                 )
 
                 if write_html:
@@ -260,36 +338,38 @@ class TPCA:
         except:
             print("An error occurred")
 
-    def get_protein_data(self, protein_datafile, index_col):
+    def get_protein_data(self):
 
         # read the file
-        self.protein_data = pd.read_excel(protein_datafile, index_col=index_col, engine="calamine")
+        self.protein_data = pd.read_excel(self.config['protein_data_file'], engine="calamine")
+        self.protein_data.set_index(self.config["protein_data_index_col"], inplace=True)
 
         # Clean up the proteome data by removing junk rows:
         self.protein_data.replace([np.inf, -np.inf], np.nan, inplace=True)
-        self.protein_data = self.protein_data[~self.protein_data['GeneIDs'].str.contains("REV__")]
-        self.protein_data = self.protein_data[~self.protein_data['GeneIDs'].str.contains("CON__")]
-        self.protein_data = self.protein_data[self.protein_data['Peptides']>1]
-        self.protein_data = self.protein_data[self.protein_data['Ratio H/L'].notnull()]
-        self.protein_data = self.protein_data[self.protein_data['Score']>10]
-        self.protein_data = self.protein_data[self.protein_data['log2FC_protein'].notnull()]
+        self.protein_data = self.protein_data[~self.protein_data[self.config["protein_data_gene_ids_col"]].str.contains("REV__")]
+        self.protein_data = self.protein_data[~self.protein_data[self.config["protein_data_gene_ids_col"]].str.contains("CON__")]
+        self.protein_data = self.protein_data[self.protein_data[self.config["protein_data_peptide_count_col"]]>1]
+        self.protein_data = self.protein_data[self.protein_data[self.config["protein_data_FC_data_col"]].notnull()]
+        self.protein_data = self.protein_data[self.protein_data[self.config["protein_data_score_col"]]>10]
+        self.protein_data = self.protein_data[self.protein_data[self.config["protein_data_score_col"]].notnull()]
 
         # Output the cleaned data to an Excel file:
-        self.protein_data.to_excel('data/Peng_Setaria_Protein_Data_Cleaned.xlsx')
+        self.protein_data.to_excel('data/Protein_Data_Cleaned.xlsx')
 
-    def get_transcript_data(self, transcript_data, index_col):
+    def get_transcript_data(self):
 
         #read the file
-        self.transcript_data = pd.read_excel(transcript_data, index_col=index_col, engine="calamine")
+        self.transcript_data = pd.read_excel(self.config['transcript_data_file'], engine="calamine")
+        self.transcript_data.set_index(self.config["transcript_data_index_col"], inplace=True)
 
         # Clean up the transcript data by removing junk rows:
         self.transcript_data.replace([np.inf, -np.inf], np.nan, inplace=True)
-        self.transcript_data = self.transcript_data[self.transcript_data['foldChange'].notnull()]
-        self.transcript_data = self.transcript_data[self.transcript_data['baseMean']>10]
-        self.transcript_data = self.transcript_data[self.transcript_data['log2FC_transcript'].notnull()]
+        self.transcript_data = self.transcript_data[self.transcript_data[self.config["transcript_data_FC_data_col"]].notnull()]
+        self.transcript_data = self.transcript_data[self.transcript_data[self.config["transcript_data_basemean_col"]]>10]
+        self.transcript_data = self.transcript_data[self.transcript_data[self.config["transcript_data_logFC_response_data_col"]].notnull()]
 
         # Output the cleaned data to an Excel file:
-        self.transcript_data.to_excel('data/Peng_Setaria_Transcript_Data_Cleaned.xlsx')
+        self.transcript_data.to_excel('data/Transcript_Data_Cleaned.xlsx')
 
     def analyse_TP_fbins(self, plotted_level_bins, options):
 
@@ -300,9 +380,6 @@ class TPCA:
             for fbin in self.level_fbins[level]:
 
                 if "all" in plotted_level_bins or fbin in plotted_level_bins:
-                    """
-                    !!! This is where the plots get generated !!!
-                    """
 
                     # run the function to generate a scatter plot for the current fbin and collect the returned results from the OLS analysis
 
@@ -322,7 +399,7 @@ class TPCA:
                         self.fbin_gene_tree_data.at[fbin, 'r-squared'] = results["r-squared"]
                         self.fbin_gene_tree_data.at[fbin, 'nobs'] = results["nobs"]
 
-        self.fbin_gene_tree_data.to_excel("exports/charts/Supplementary_Data_File_3_Transcript_Protein_Corr.xlsx")
+        self.fbin_gene_tree_data.to_excel("exports/charts/Transcript_Protein_Corr.xlsx")
 
         return
 
@@ -337,25 +414,47 @@ class TPCA:
 
         self.app = Dash("Transcripto-Proteomic Correlation Analyzer")
 
-        sunburst_fig = px.sunburst(self.fbin_gene_tree_data, names="name", parents="parent", values="value", color="r", color_continuous_scale="RdBu", color_continuous_midpoint=0)
-        sunburst_fig.update_layout(height=500)
+        sunburst_fig = px.sunburst(self.fbin_gene_tree_data,
+                                   names="name",
+                                   parents="parent",
+                                   values="value",
+                                   color="r",
+                                   color_continuous_scale="RdBu",
+                                   color_continuous_midpoint=0)
+
+        sunburst_fig.update_layout(height=self.config["figure_height"])
 
         title = ("log2FC(Transcript) vs log2FC(Protein) [All Functional Bins]: " +
-                 " (r = " + str(self.fbin_gene_tree_data.at["all", "r"]) +
-                 " r2 = " + str(self.fbin_gene_tree_data.at["all", "r-squared"]) +
+                 " (r = " + str(round(self.fbin_gene_tree_data.at["all", "r"], 3)) +
+                 " r2 = " + str(round(self.fbin_gene_tree_data.at["all", "r-squared"], 3)) +
                  ")")
 
-        scatter_fig = px.scatter(self.protein_transcript_data, x="log2FC_transcript", y="log2FC_protein", color='Intensity', size='Intensity',
-                                 trendline='ols', color_continuous_scale=px.colors.sequential.Bluered, title=title,
-                                 hover_name="Fasta headers", custom_data=['newlocusName'], template='plotly_white')
+        scatter_fig = px.scatter(self.protein_transcript_data,
+                                 x=self.config["transcript_data_logFC_response_data_col"],
+                                 y=self.config["protein_data_logFC_response_data_col"],
+                                 color=self.config["protein_data_abundance_col"],
+                                 size=self.config["protein_data_abundance_col"],
+                                 trendline='ols',
+                                 color_continuous_scale=px.colors.sequential.Bluered,
+                                 title=title,
+                                 hover_name=self.config["protein_data_description_col"],
+                                 custom_data=[self.config["gene_id_col"]],
+                                 template='plotly_white')
 
         scatter_fig.update_layout(
             plot_bgcolor='white',
             hovermode="x unified",
             hoverlabel=dict(bgcolor='rgba(180, 180, 180, 0.5)', font_size=10, font_color='rgba(0, 0, 0, 1)'),
             clickmode='event+select',
-            height=500
+            height=self.config["figure_height"]
         )
+
+        fbin_gene_tree_data_cols = [{"name": i, "id": i} for i in self.fbin_gene_tree_data.columns]
+
+        for c in range(len(fbin_gene_tree_data_cols)):
+            if fbin_gene_tree_data_cols[c]['name'] in ['r', 'r-squared']:
+                fbin_gene_tree_data_cols[c]['type'] = 'numeric'
+                fbin_gene_tree_data_cols[c]['format'] = Format(precision=3, scheme=Scheme.decimal)
 
         self.app.layout = html.Div([
 
@@ -377,24 +476,26 @@ class TPCA:
                 dcc.Tab(label='Functional Bins', children=[
 
                     dash_table.DataTable(self.fbin_gene_tree_data.to_dict('records'),
-                                         columns=[{"name": i, "id": i} for i in self.fbin_gene_tree_data.columns],
+                                         columns=fbin_gene_tree_data_cols,
                                          id='fbin-table',
                                          sort_action="native",
                                          page_size=20,
                                          )
                     ]),
                 dcc.Tab(label='Gene Products', children=[
+
                     dash_table.DataTable(self.protein_transcript_data.to_dict('records'),
                                          columns=[{"name": i, "id": i} for i in self.protein_transcript_data.columns if
-                                                  i in ["Majority protein IDs", "Fasta headers"]],
+                                                  i in [self.config["protein_data_gene_ids_col"],
+                                                        self.config["protein_data_description_col"]]],
                                          id='gene-table',
                                          sort_action="native",
                                          page_size=20,
                                          ),
                     ]),
-                dcc.Tab(label='Gene Info', children=[
-
-                ]),
+                # dcc.Tab(label='Gene Info', children=[
+                #
+                # ]),
             ]),
         ])
 
@@ -450,7 +551,7 @@ class TPCA:
                 gene_set = []
                 gene_set.append(clickData['points'][1]["customdata"][0])
 
-            selected_subset_data = self.protein_transcript_data[self.protein_transcript_data['newlocusName'].isin(gene_set)].to_dict("records")
+            selected_subset_data = self.protein_transcript_data[self.protein_transcript_data[self.config["gene_id_col"]].isin(gene_set)].to_dict("records")
 
             return selected_subset_data
 
@@ -478,8 +579,8 @@ class TPCA:
                     gene_set = []
                     gene_set.append(scatterclickdata['points'][1]["customdata"][0])
 
-                selected_subset_pt_data = self.protein_transcript_data[self.protein_transcript_data['newlocusName'].isin(gene_set)]
-                fbins = selected_subset_pt_data["NAME"].unique()
+                selected_subset_pt_data = self.protein_transcript_data[self.protein_transcript_data[self.config["gene_id_col"]].isin(gene_set)]
+                fbins = selected_subset_pt_data[self.config["fbin_col"]].unique()
                 selected_fbin_gene_tree_data = self.fbin_gene_tree_data[self.fbin_gene_tree_data['name'].isin(fbins)].to_dict("records")
                 return selected_fbin_gene_tree_data
 

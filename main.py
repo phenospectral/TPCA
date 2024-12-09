@@ -22,14 +22,25 @@ corresponding row in the transcript data table below
 
 tpca = TPCA()
 
-tpca.get_protein_data('data/Peng_Setaria_Protein_Data_20240521.xlsx', 0)
-tpca.get_transcript_data('data/Peng_Setaria_Transcript_Data_20240521.xlsx', 1)
+# Customise configuration parameters as necessary. See all the configurable keys in tpca.py
+config = {
+
+    # provide the path to the proteomic data table (*.xlsx)
+    'protein_data_file': 'data/Peng_Setaria_Protein_Data_20240521.xlsx',
+
+    # provide the path to the transcriptomic data table (*.xlsx)
+    'transcript_data_file': 'data/Peng_Setaria_Transcript_Data_20240521.xlsx',
+
+}
+
+tpca.configure(config)
+
+# read the two data files, filter out bad data, join the tables
 tpca.prepare()
 
 options = {'write_html': True}
-
-results = tpca.analyse_TP_fbins(["all"], options)
-app = tpca.plot(options)
+tpca.analyse_TP_fbins(["all"], options)
+tpca.plot(options)
 
 
 
